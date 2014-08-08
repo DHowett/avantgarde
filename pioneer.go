@@ -81,7 +81,14 @@ func main() {
 	})
 	bindCommandGenerator("/tv/volume", func(r *http.Request) Command {
 		dir := r.FormValue("d")
-		val, e := strconv.Atoi(r.FormValue("v"))
+		formV := r.FormValue("v")
+		if formV == "max" {
+			return VolumeMaxCommand()
+		} else if formV == "min" {
+			return VolumeMinCommand()
+		}
+
+		val, e := strconv.Atoi(formV)
 		if e != nil {
 			return nil
 		}

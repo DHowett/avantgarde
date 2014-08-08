@@ -67,6 +67,10 @@ func VolumeUpCommand(val int) Command {
 	return StringCommand{"VOL", fmt.Sprintf("UP%1.01d", val)}
 }
 
+func VolumeMaxCommand() Command {
+	return StringCommand{"VOL", "UPF"}
+}
+
 func VolumeDownCommand(val int) Command {
 	if val < 0 {
 		return nil
@@ -75,6 +79,10 @@ func VolumeDownCommand(val int) Command {
 		val = 0
 	}
 	return StringCommand{"VOL", fmt.Sprintf("DW%1.01d", val)}
+}
+
+func VolumeMinCommand() Command {
+	return StringCommand{"VOL", "DWF"}
 }
 
 func MuteCommand(on bool) Command {
