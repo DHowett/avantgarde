@@ -107,6 +107,13 @@ func main() {
 		}
 		return InputCommand(inp)
 	})
+	bindCommandGenerator("/tv/raw", func(r *http.Request) Command {
+		cmd := r.FormValue("v")
+		if cmd == "" {
+			return nil
+		}
+		return StringCommand{cmd}
+	})
 
 	commandStream.Run()
 
