@@ -44,7 +44,7 @@ func PowerCommand(on bool) Command {
 }
 
 func InputCommand(val int) Command {
-	if val < 0 || val > 6 {
+	if val < 0 || val > 7 {
 		return nil
 	}
 	return DelayedCommand{StringCommand{"INP", fmt.Sprintf("S%2.02d", val)}, 500 * time.Millisecond}
