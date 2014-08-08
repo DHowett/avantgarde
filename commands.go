@@ -35,6 +35,7 @@ func (self DelayedCommand) Delay() time.Duration {
 	return self.D
 }
 
+/* Power Commands */
 func PowerCommand(on bool) Command {
 	if on {
 		return DelayedCommand{StringCommand{"PON"}, 2 * time.Second}
@@ -43,6 +44,7 @@ func PowerCommand(on bool) Command {
 	}
 }
 
+/* Input Commands */
 func InputCommand(val int) Command {
 	if val < 0 || val > 7 {
 		return nil
@@ -50,6 +52,7 @@ func InputCommand(val int) Command {
 	return DelayedCommand{StringCommand{"INP", fmt.Sprintf("S%2.02d", val)}, 500 * time.Millisecond}
 }
 
+/* Volume Commands */
 func VolumeCommand(val int) Command {
 	if val < 0 || val > 100 {
 		return nil
@@ -93,6 +96,41 @@ func MuteCommand(on bool) Command {
 	}
 }
 
+type Channel interface {
+	Representation() string
+}
+
+type AnalogChannel uint
+
+func (a AnalogChannel) Representation() string {
+	return fmt.Sprintf("%3.03x", uint(a))
+}
+
+type DigitalChannel struct {
+	Ch  uint
+	Sub uint
+}
+
+func (d DigitalChannel) Representation() string {
+	return fmt.Sprintf("%6.06x%3.03x", d.Ch, d.Sub)
+}
+
+type Antenna string
+
+const (
+	AntennaA Antenna = "A"
+	AntennaB         = "B"
+)
+
+func TuneChannelCommand(ant Antenna, ch Channel) Command {
+	// Antenna B cannot tune digital channels.
+	if _, ok := ch.(DigitalChannel); ok && ant == AntennaB {
+		return nil
+	}
+	return StringCommand{"IN" + string(ant), ch.Representation()}
+}
+
+/* End of Commands */
 type CommandReadWriter struct {
 	w io.Writer
 	r *bufio.Reader
