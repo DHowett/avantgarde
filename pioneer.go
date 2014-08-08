@@ -11,13 +11,13 @@ import (
 	"github.com/jessevdk/go-flags"
 )
 
-func bind(path string, c Command) {
-	bindGenerator(path, func(r *http.Request) Command {
+func bindCommand(path string, c Command) {
+	bindCommandGenerator(path, func(r *http.Request) Command {
 		return c
 	})
 }
 
-func bindGenerator(path string, generator func(*http.Request) Command) {
+func bindCommandGenerator(path string, generator func(*http.Request) Command) {
 	http.DefaultServeMux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -71,12 +71,12 @@ func main() {
 	cmdReadWriter := NewCommandReadWriter(serialPort)
 	cmdStream = NewCommandStream(cmdReadWriter)
 
-	bind("/tv/mute", MuteCommand(true))
-	bind("/tv/unmute", MuteCommand(false))
-	bindGenerator("/tv/power", func(r *http.Request) Command {
+	bindCommand("/tv/mute", MuteCommand(true))
+	bindCommand("/tv/unmute", MuteCommand(false))
+	bindCommandGenerator("/tv/power", func(r *http.Request) Command {
 		return PowerCommand(r.FormValue("v") == "1")
 	})
-	bindGenerator("/tv/volume", func(r *http.Request) Command {
+	bindCommandGenerator("/tv/volume", func(r *http.Request) Command {
 		dir := r.FormValue("d")
 		val, e := strconv.Atoi(r.FormValue("v"))
 		if e != nil {
@@ -90,7 +90,7 @@ func main() {
 			return VolumeCommand(val)
 		}
 	})
-	bindGenerator("/tv/input", func(r *http.Request) Command {
+	bindCommandGenerator("/tv/input", func(r *http.Request) Command {
 		inp, e := strconv.Atoi(r.FormValue("v"))
 		if e != nil {
 			return nil
