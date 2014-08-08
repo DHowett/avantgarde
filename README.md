@@ -14,3 +14,15 @@ curl 'http://localhost:5456/tv/volume' -d 'v=15'
 # Switch to Input 6
 curl 'http://localhost:5456/tv/input' -d 'v=6'
 ```
+
+### Options
+
+```
+Usage:
+  avantgarde [OPTIONS]
+
+Application Options:
+  -d, --dev=  serial device (/dev/ttyUSB0)
+  -b, --baud= baud rate (9600)
+  -a, --addr= bind address (web server) (:5456)
+```

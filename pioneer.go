@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/distributed/sers"
+	"github.com/jessevdk/go-flags"
 )
 
 func bind(path string, c Command) {
@@ -49,17 +50,29 @@ type CmdReq struct {
 
 var cmdChan chan CmdReq
 
+type Options struct {
+	Device string `short:"d" long:"dev" description:"serial device" default:"/dev/ttyUSB0"`
+	Baud   int    `short:"b" long:"baud" description:"baud rate" default:"9600"`
+
+	BindAddress string `short:"a" long:"addr" description:"bind address (web server)" default:":5456"`
+}
+
 func main() {
 	quit := make(chan struct{})
 	sigChan := make(chan os.Signal)
 	signal.Notify(sigChan, os.Interrupt, os.Kill)
 
+	var opts Options
+	if _, err := flags.Parse(&opts); err != nil {
+		os.Exit(1)
+	}
+
 	cmdChan = make(chan CmdReq)
-	serialPort, err := sers.Open("/dev/ttyUSB0")
+	serialPort, err := sers.Open(opts.Device)
 	if err != nil {
 		panic(err)
 	}
-	err = serialPort.SetMode(9600, 8, sers.N, 1, sers.NO_HANDSHAKE)
+	err = serialPort.SetMode(opts.Baud, 8, sers.N, 1, sers.NO_HANDSHAKE)
 	if err != nil {
 		panic(err)
 	}
@@ -110,7 +123,7 @@ func main() {
 	}()
 	// T V in hex
 	go func() {
-		http.ListenAndServe(":5456", nil)
+		http.ListenAndServe(opts.BindAddress, nil)
 	}()
 	<-quit
 	serialPort.Close()
