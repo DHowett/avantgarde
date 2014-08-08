@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -100,10 +102,30 @@ type Channel interface {
 	Representation() string
 }
 
+func ParseChannel(s string) Channel {
+	ch, err := strconv.ParseUint(s, 10, 0)
+	if err != nil { // This might be a digital channel
+		parts := strings.Split(s, ".")
+		if len(parts) != 2 {
+			return nil
+		}
+		ch, err = strconv.ParseUint(parts[0], 10, 0)
+		if err != nil { // This is not a channel :P
+			return nil
+		}
+		subch, err := strconv.ParseUint(parts[1], 10, 0)
+		if err != nil { // This is not a channel :P
+			return nil
+		}
+		return DigitalChannel{uint(ch), uint(subch)}
+	}
+	return AnalogChannel(uint(ch))
+}
+
 type AnalogChannel uint
 
 func (a AnalogChannel) Representation() string {
-	return fmt.Sprintf("%3.03x", uint(a))
+	return fmt.Sprintf("%3.03d", uint(a))
 }
 
 type DigitalChannel struct {
@@ -112,7 +134,7 @@ type DigitalChannel struct {
 }
 
 func (d DigitalChannel) Representation() string {
-	return fmt.Sprintf("%6.06x%3.03x", d.Ch, d.Sub)
+	return fmt.Sprintf("%6.06d%3.03d", d.Ch, d.Sub)
 }
 
 type Antenna string
