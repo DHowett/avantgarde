@@ -14,47 +14,32 @@ type Command interface {
 	Delay() time.Duration
 }
 
-type BasicCommand string
+type StringCommand []string
 
-func (self BasicCommand) Representation() []string {
-	return []string{string(self)}
-}
-
-func (self BasicCommand) Delay() time.Duration { return time.Duration(0) }
-
-type ArgumentCommand []string
-
-func (self ArgumentCommand) Representation() []string {
+func (self StringCommand) Representation() []string {
 	return []string(self)
 }
 
-func (self ArgumentCommand) Delay() time.Duration { return time.Duration(0) }
+func (self StringCommand) Delay() time.Duration { return time.Duration(0) }
 
-type CommandFunc func() Command
-
-func (self CommandFunc) Representation() []string {
-	return self().Representation()
-}
-func (self CommandFunc) Delay() time.Duration { return self().Delay() }
-
-type DelayCommand struct {
+type DelayedCommand struct {
 	Command
 	D time.Duration
 }
 
-func (self DelayCommand) Representation() []string {
+func (self DelayedCommand) Representation() []string {
 	return self.Command.Representation()
 }
 
-func (self DelayCommand) Delay() time.Duration {
+func (self DelayedCommand) Delay() time.Duration {
 	return self.D
 }
 
 func PowerCommand(on bool) Command {
 	if on {
-		return DelayCommand{BasicCommand("PON"), 2 * time.Second}
+		return DelayedCommand{StringCommand{"PON"}, 2 * time.Second}
 	} else {
-		return BasicCommand("POF")
+		return StringCommand{"POF"}
 	}
 }
 
@@ -62,14 +47,14 @@ func InputCommand(val int) Command {
 	if val < 0 || val > 6 {
 		return nil
 	}
-	return DelayCommand{ArgumentCommand{"INP", fmt.Sprintf("S%2.02d", val)}, 500 * time.Millisecond}
+	return DelayedCommand{StringCommand{"INP", fmt.Sprintf("S%2.02d", val)}, 500 * time.Millisecond}
 }
 
 func VolumeCommand(val int) Command {
 	if val < 0 || val > 100 {
 		return nil
 	}
-	return ArgumentCommand{"VOL", fmt.Sprintf("%3.03d", val)}
+	return StringCommand{"VOL", fmt.Sprintf("%3.03d", val)}
 }
 
 func VolumeUpCommand(val int) Command {
@@ -79,7 +64,7 @@ func VolumeUpCommand(val int) Command {
 	if val > 10 {
 		val = 0
 	}
-	return ArgumentCommand{"VOL", fmt.Sprintf("UP%1.01d", val)}
+	return StringCommand{"VOL", fmt.Sprintf("UP%1.01d", val)}
 }
 
 func VolumeDownCommand(val int) Command {
@@ -89,14 +74,14 @@ func VolumeDownCommand(val int) Command {
 	if val > 10 {
 		val = 0
 	}
-	return ArgumentCommand{"VOL", fmt.Sprintf("DW%1.01d", val)}
+	return StringCommand{"VOL", fmt.Sprintf("DW%1.01d", val)}
 }
 
 func MuteCommand(on bool) Command {
 	if on {
-		return ArgumentCommand{"AMT", "S01"}
+		return StringCommand{"AMT", "S01"}
 	} else {
-		return ArgumentCommand{"AMT", "S00"}
+		return StringCommand{"AMT", "S00"}
 	}
 }
 
