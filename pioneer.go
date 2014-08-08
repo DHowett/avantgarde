@@ -2,6 +2,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,6 +11,8 @@ import (
 	"github.com/distributed/sers"
 	"github.com/jessevdk/go-flags"
 )
+
+var commandStream *CommandStream
 
 func bindCommand(path string, c Command) {
 	bindCommandGenerator(path, func(r *http.Request) Command {
@@ -30,7 +33,7 @@ func bindCommandGenerator(path string, generator func(*http.Request) Command) {
 			return
 		}
 
-		err := <-cmdStream.Submit(cmd)
+		err := <-commandStream.Submit(cmd)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(err.Error()))
@@ -40,8 +43,6 @@ func bindCommandGenerator(path string, generator func(*http.Request) Command) {
 	}))
 }
 
-var cmdStream *CommandStream
-
 type Options struct {
 	Device string `short:"d" long:"dev" description:"serial device" default:"/dev/ttyUSB0"`
 	Baud   int    `short:"b" long:"baud" description:"baud rate" default:"9600"`
@@ -50,7 +51,9 @@ type Options struct {
 }
 
 func main() {
-	quit := make(chan struct{})
+	quitC := make(chan struct{})
+
+	/* Set up signal handling */
 	sigChan := make(chan os.Signal)
 	signal.Notify(sigChan, os.Interrupt, os.Kill)
 
@@ -61,15 +64,15 @@ func main() {
 
 	serialPort, err := sers.Open(opts.Device)
 	if err != nil {
-		panic(err)
-	}
-	err = serialPort.SetMode(opts.Baud, 8, sers.N, 1, sers.NO_HANDSHAKE)
-	if err != nil {
-		panic(err)
+		log.Fatalf("failed to open serial device `%v`: %v\n", opts.Device, err.Error())
 	}
 
-	cmdReadWriter := NewCommandReadWriter(serialPort)
-	cmdStream = NewCommandStream(cmdReadWriter)
+	err = serialPort.SetMode(opts.Baud, 8, sers.N, 1, sers.NO_HANDSHAKE)
+	if err != nil {
+		log.Fatalf("failed to configure serial device: %v\n", err.Error())
+	}
+
+	commandStream = NewCommandStream(NewCommandReadWriter(serialPort))
 
 	bindCommand("/tv/mute", MuteCommand(true))
 	bindCommand("/tv/unmute", MuteCommand(false))
@@ -98,22 +101,17 @@ func main() {
 		return InputCommand(inp)
 	})
 
-	cmdStream.Run()
+	commandStream.Run()
 
 	go func() {
-		for {
-			select {
-			case _ = <-sigChan:
-				quit <- struct{}{}
-				return
-			}
-		}
+		<-sigChan
+		quitC <- struct{}{}
 	}()
 
-	// T V in hex
 	go func() {
 		http.ListenAndServe(opts.BindAddress, nil)
 	}()
-	<-quit
+
+	<-quitC
 	serialPort.Close()
 }
