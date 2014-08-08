@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"time"
 
 	"github.com/distributed/sers"
 	"github.com/jessevdk/go-flags"
@@ -25,15 +24,13 @@ func bindGenerator(path string, generator func(*http.Request) Command) {
 			return
 		}
 
-		ec := make(chan error)
 		cmd := generator(r)
 		if cmd == nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		cmdChan <- CmdReq{cmd, ec}
-		err := <-ec
+		err := <-cmdStream.Submit(cmd)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(err.Error()))
@@ -43,12 +40,7 @@ func bindGenerator(path string, generator func(*http.Request) Command) {
 	}))
 }
 
-type CmdReq struct {
-	Command
-	ret chan error
-}
-
-var cmdChan chan CmdReq
+var cmdStream *CommandStream
 
 type Options struct {
 	Device string `short:"d" long:"dev" description:"serial device" default:"/dev/ttyUSB0"`
@@ -67,7 +59,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	cmdChan = make(chan CmdReq)
 	serialPort, err := sers.Open(opts.Device)
 	if err != nil {
 		panic(err)
@@ -78,6 +69,7 @@ func main() {
 	}
 
 	cmdReadWriter := NewCommandReadWriter(serialPort)
+	cmdStream = NewCommandStream(cmdReadWriter)
 
 	bind("/tv/mute", MuteCommand(true))
 	bind("/tv/unmute", MuteCommand(false))
@@ -105,22 +97,19 @@ func main() {
 		}
 		return InputCommand(inp)
 	})
+
+	cmdStream.Run()
+
 	go func() {
 		for {
 			select {
-			case cr := <-cmdChan:
-				e := cmdReadWriter.WriteCommand(cr.Command)
-				if e != nil {
-					cr.ret <- e
-				}
-				time.Sleep(cr.Command.Delay())
-				cr.ret <- cmdReadWriter.ReadResponse()
 			case _ = <-sigChan:
 				quit <- struct{}{}
 				return
 			}
 		}
 	}()
+
 	// T V in hex
 	go func() {
 		http.ListenAndServe(opts.BindAddress, nil)
