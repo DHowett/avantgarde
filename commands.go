@@ -40,7 +40,7 @@ func (self DelayedCommand) Delay() time.Duration {
 /* Power Commands */
 func PowerCommand(on bool) Command {
 	if on {
-		return DelayedCommand{StringCommand{"PON"}, 2 * time.Second}
+		return DelayedCommand{StringCommand{"PON"}, 6 * time.Second}
 	} else {
 		return StringCommand{"POF"}
 	}
