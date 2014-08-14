@@ -102,24 +102,24 @@ type Channel interface {
 	Representation() string
 }
 
-func ParseChannel(s string) Channel {
+func ParseChannel(s string) (Channel, error) {
 	ch, err := strconv.ParseUint(s, 10, 0)
 	if err != nil { // This might be a digital channel
 		parts := strings.Split(s, ".")
 		if len(parts) != 2 {
-			return nil
+			return nil, fmt.Errorf("%s: not an analog channel, but more or less than 2 components", s)
 		}
 		ch, err = strconv.ParseUint(parts[0], 10, 0)
 		if err != nil { // This is not a channel :P
-			return nil
+			return nil, fmt.Errorf("%s: failed to parse channel", s)
 		}
 		subch, err := strconv.ParseUint(parts[1], 10, 0)
 		if err != nil { // This is not a channel :P
-			return nil
+			return nil, fmt.Errorf("%s: failed to parse subchannel", s)
 		}
-		return DigitalChannel{uint(ch), uint(subch)}
+		return DigitalChannel{uint(ch), uint(subch)}, nil
 	}
-	return AnalogChannel(uint(ch))
+	return AnalogChannel(uint(ch)), nil
 }
 
 type AnalogChannel uint
