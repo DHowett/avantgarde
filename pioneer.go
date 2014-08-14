@@ -92,6 +92,7 @@ func main() {
 	bindCommand("/tv/mute", MuteCommand(true))
 	bindCommand("/tv/unmute", MuteCommand(false))
 	bindCommandGenerator("/tv/power", boolGenerator("v", PowerCommand))
+	bindCommandGenerator("/tv/osd", boolGenerator("v", OSDCommand))
 	bindCommandGenerator("/tv/volume", func(r *http.Request) Command {
 		dir := r.FormValue("d")
 		formV := r.FormValue("v")
@@ -114,6 +115,17 @@ func main() {
 		}
 	})
 	bindCommandGenerator("/tv/input", intGenerator("v", InputCommand))
+	bindCommandGenerator("/tv/channel", func(r *http.Request) Command {
+		ch, err := ParseChannel(r.FormValue("v"))
+		if err != nil {
+			return nil
+		}
+		antenna := r.FormValue("a")
+		if antenna == "" {
+			return nil
+		}
+		return TuneChannelCommand(Antenna(antenna), ch)
+	})
 	bindCommandGenerator("/tv/raw", func(r *http.Request) Command {
 		cmd := r.FormValue("v")
 		if cmd == "" {
