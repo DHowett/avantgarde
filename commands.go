@@ -98,6 +98,16 @@ func MuteCommand(on bool) Command {
 	}
 }
 
+/* Display Commands */
+func OSDCommand(on bool) Command {
+	if on {
+		return StringCommand{"OSD", "S01"}
+	} else {
+		return StringCommand{"OSD", "S00"}
+	}
+}
+
+/* Tuning Commands */
 type Channel interface {
 	Representation() string
 }
