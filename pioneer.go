@@ -43,6 +43,21 @@ func bindCommandGenerator(path string, generator func(*http.Request) Command) {
 	}))
 }
 
+func boolGenerator(key string, cmd func(bool) Command) func(*http.Request) Command {
+	return func(r *http.Request) Command {
+		return cmd(r.FormValue(key) == "1")
+	}
+}
+func intGenerator(key string, cmd func(int) Command) func(*http.Request) Command {
+	return func(r *http.Request) Command {
+		inp, e := strconv.Atoi(r.FormValue(key))
+		if e != nil {
+			return nil
+		}
+		return cmd(inp)
+	}
+}
+
 type Options struct {
 	Device string `short:"d" long:"dev" description:"serial device" default:"/dev/ttyUSB0"`
 	Baud   int    `short:"b" long:"baud" description:"baud rate" default:"9600"`
@@ -76,9 +91,7 @@ func main() {
 
 	bindCommand("/tv/mute", MuteCommand(true))
 	bindCommand("/tv/unmute", MuteCommand(false))
-	bindCommandGenerator("/tv/power", func(r *http.Request) Command {
-		return PowerCommand(r.FormValue("v") == "1")
-	})
+	bindCommandGenerator("/tv/power", boolGenerator("v", PowerCommand))
 	bindCommandGenerator("/tv/volume", func(r *http.Request) Command {
 		dir := r.FormValue("d")
 		formV := r.FormValue("v")
@@ -100,13 +113,7 @@ func main() {
 			return VolumeCommand(val)
 		}
 	})
-	bindCommandGenerator("/tv/input", func(r *http.Request) Command {
-		inp, e := strconv.Atoi(r.FormValue("v"))
-		if e != nil {
-			return nil
-		}
-		return InputCommand(inp)
-	})
+	bindCommandGenerator("/tv/input", intGenerator("v", InputCommand))
 	bindCommandGenerator("/tv/raw", func(r *http.Request) Command {
 		cmd := r.FormValue("v")
 		if cmd == "" {
