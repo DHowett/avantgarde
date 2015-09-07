@@ -122,6 +122,13 @@ func (lg *lgTV) Do(op *tv.Op) error {
 		cmd = &lgCommand{'x', 'b', uint8(op.Value.(int))}
 	case tv.Tuning:
 		cmd = lg.channelTuningCommand(op.Value.(tv.Tune))
+	case tv.Raw:
+		buf := op.Value.([]byte)
+		if buf[len(buf)-1] != 0x0D {
+			buf = append(buf, 0x0D)
+		}
+		lg.w.Write(buf)
+		return nil
 	}
 
 	if cmd == nil {
