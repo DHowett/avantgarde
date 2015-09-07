@@ -14,6 +14,7 @@ const (
 	OSD
 	Input
 	Tuning
+	Raw
 )
 
 type Operator uint
