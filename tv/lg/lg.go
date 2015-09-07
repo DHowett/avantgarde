@@ -83,11 +83,32 @@ type lgTV struct {
 	c      io.Closer
 }
 
+func (lg *lgTV) channelTuningCommand(t tv.Tune) *lgCommand {
+	type lgTuningInfo struct {
+		Phys                uint8
+		Channel, Subchannel uint16
+		Antenna             uint8
+	}
+
+	switch cht := t.C.(type) {
+	case tv.AnalogChannel:
+		return &lgCommand{'m', 'a', lgTuningInfo{uint8(cht), 0, 0, 0x01}}
+	case tv.DigitalChannel:
+		return &lgCommand{'m', 'a', lgTuningInfo{0x00, uint16(cht.Ch), uint16(cht.Sub), 0x22}}
+	default:
+		return nil
+	}
+}
+
 func (lg *lgTV) Do(op *tv.Op) error {
 	var cmd *lgCommand
 	switch op.Attribute {
 	case tv.Power:
 		cmd = &lgCommand{'k', 'a', op.Value}
+	case tv.Mute:
+		cmd = &lgCommand{'k', 'e', op.Value}
+	case tv.OSD:
+		cmd = &lgCommand{'k', 'l', op.Value}
 	case tv.Volume:
 		switch op.Operator {
 		case tv.Set:
@@ -99,12 +120,15 @@ func (lg *lgTV) Do(op *tv.Op) error {
 		}
 	case tv.Input:
 		cmd = &lgCommand{'x', 'b', uint8(op.Value.(int))}
+	case tv.Tuning:
+		cmd = lg.channelTuningCommand(op.Value.(tv.Tune))
 	}
 
 	if cmd == nil {
 		return errors.New("lg: unsupported")
 	} else {
-		lg.w.Write(cmd.Serialize(lg.config.SetID))
+		serialized := cmd.Serialize(lg.config.SetID)
+		lg.w.Write(serialized)
 		return nil
 	}
 }
