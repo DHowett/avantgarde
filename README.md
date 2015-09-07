@@ -1,8 +1,8 @@
 # Avant-garde
 
-Pioneer televisions have an *integrator interface*, accessible via RS-232. This interface is a hardwired replacement for the infrared remote—it can change inputs, mute status, power, volume, channels, et-cetera.
+Some televisions have an *integrator interface*. This interface is a hardwired replacement for the infrared remote—it can change inputs, mute status, power, volume, channels, et-cetera.
 
-**This is a web interface to the Pioneer integrator protocol.** It lives on port 5456, because `0x54 0x56` is `TV` in ASCII.
+**This is a web interface to the various television integrator protocols.** It lives on port 5456, because `0x54 0x56` is `TV` in ASCII.
 
 ### `avantgarde` by example
 
@@ -15,6 +15,10 @@ curl 'http://localhost:5456/tv/volume' -d 'v=15'
 curl 'http://localhost:5456/tv/input' -d 'v=6'
 ```
 
+### Configuration
+
+(not yet documented)
+
 ### Options
 
 ```
@@ -22,7 +26,5 @@ Usage:
   avantgarde [OPTIONS]
 
 Application Options:
-  -d, --dev=  serial device (/dev/ttyUSB0)
-  -b, --baud= baud rate (9600)
   -a, --addr= bind address (web server) (:5456)
 ```
