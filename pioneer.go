@@ -2,12 +2,14 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 
 	"github.com/distributed/sers"
 	"github.com/jessevdk/go-flags"
@@ -18,6 +20,26 @@ import (
 )
 
 var commandStream *CommandStream
+
+func ParseChannel(s string) (tv.Channel, error) {
+	ch, err := strconv.ParseUint(s, 10, 0)
+	if err != nil { // This might be a digital channel
+		parts := strings.Split(s, ".")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("%s: not an analog channel, but more or less than 2 components", s)
+		}
+		ch, err = strconv.ParseUint(parts[0], 10, 0)
+		if err != nil { // This is not a channel :P
+			return nil, fmt.Errorf("%s: failed to parse channel", s)
+		}
+		subch, err := strconv.ParseUint(parts[1], 10, 0)
+		if err != nil { // This is not a channel :P
+			return nil, fmt.Errorf("%s: failed to parse subchannel", s)
+		}
+		return tv.DigitalChannel{uint(ch), uint(subch)}, nil
+	}
+	return tv.AnalogChannel(uint(ch)), nil
+}
 
 func bindCommand(path string, o *tv.Op) {
 	bindCommandGenerator(path, func(r *http.Request) *tv.Op {
@@ -38,13 +60,23 @@ func bindCommandGenerator(path string, generator func(*http.Request) *tv.Op) {
 			return
 		}
 
+		tvId, err := strconv.Atoi(r.FormValue("tv"))
+		if err != nil {
+			tvId = 0
+		}
+
+		if tvId >= len(tvs) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
 		cmd := generator(r)
 		if cmd == nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		err := tvs[0].Do(cmd)
+		err = tvs[tvId].Do(cmd)
 		//err := <-commandStream.Submit(cmd)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -98,23 +130,31 @@ type Config struct {
 }
 
 type Options struct {
-	Device string `short:"d" long:"dev" description:"serial device" default:"/dev/ttyUSB0"`
-	Baud   int    `short:"b" long:"baud" description:"baud rate" default:"9600"`
-
+	Config      string `short:"c" long:"config" description:"configuration file location" default:"./config.yml"`
 	BindAddress string `short:"a" long:"addr" description:"bind address (web server)" default:":5456"`
 }
 
 var tvs []tv.TV
 
 func main() {
-	cfgb, _ := ioutil.ReadFile("config.yml")
-	var cfg Config
-	yaml.Unmarshal(cfgb, &cfg)
+	var opts Options
+	if _, err := flags.Parse(&opts); err != nil {
+		os.Exit(1)
+	}
 
-	var serialPort sers.SerialPort
-	var err error
+	cfgb, err := ioutil.ReadFile(opts.Config)
+	if err != nil {
+		panic(err)
+	}
+
+	var cfg Config
+	err = yaml.Unmarshal(cfgb, &cfg)
+	if err != nil {
+		panic(err)
+	}
+
 	for _, tvc := range cfg.TVs {
-		serialPort, err = sers.Open(tvc.V.Device)
+		serialPort, err := sers.Open(tvc.V.Device)
 		if err != nil {
 			log.Fatalf("failed to open serial device `%v`: %v\n", tvc.V.Device, err.Error())
 		}
@@ -136,13 +176,6 @@ func main() {
 	/* Set up signal handling */
 	sigChan := make(chan os.Signal)
 	signal.Notify(sigChan, os.Interrupt, os.Kill)
-
-	var opts Options
-	if _, err := flags.Parse(&opts); err != nil {
-		os.Exit(1)
-	}
-
-	commandStream = NewCommandStream(NewCommandReadWriter(serialPort))
 
 	bindCommand("/tv/mute", &tv.Op{tv.Mute, tv.Set, true})
 	bindCommand("/tv/unmute", &tv.Op{tv.Mute, tv.Set, false})
@@ -170,26 +203,26 @@ func main() {
 		}
 	})
 	bindCommandGenerator("/tv/input", intGenerator("v", tv.Input))
-	/*
-		bindCommandGenerator("/tv/channel", func(r *http.Request) Command {
-			ch, err := ParseChannel(r.FormValue("v"))
-			if err != nil {
-				return nil
-			}
+	bindCommandGenerator("/tv/channel", func(r *http.Request) *tv.Op {
+		ch, err := ParseChannel(r.FormValue("v"))
+		if err != nil {
+			return nil
+		}
+		/*
 			antenna := r.FormValue("a")
 			if antenna == "" {
 				return nil
 			}
-			return TuneChannelCommand(Antenna(antenna), ch)
-		})
-		bindCommandGenerator("/tv/raw", func(r *http.Request) Command {
-			cmd := r.FormValue("v")
-			if cmd == "" {
-				return nil
-			}
-			return StringCommand{cmd}
-		})
-	*/
+		*/
+		return &tv.Op{tv.Tuning, tv.Set, tv.Tune{0x01, ch}}
+	})
+	bindCommandGenerator("/tv/raw", func(r *http.Request) *tv.Op {
+		cmd := r.FormValue("v")
+		if cmd == "" {
+			return nil
+		}
+		return &tv.Op{tv.Raw, tv.Set, []byte(cmd)}
+	})
 
 	//commandStream.Run()
 
