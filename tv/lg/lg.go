@@ -15,7 +15,7 @@ type remoteKey uint8
 
 const (
 	RKVolumeUp   remoteKey = 2
-	RKVolumeDown           = 3
+	RKVolumeDown remoteKey = 3
 )
 
 type Config struct {
