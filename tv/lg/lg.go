@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/DHowett/avantgarde/tv"
 )
@@ -41,6 +42,7 @@ func (l *lgModel) Initialize(rwc io.ReadWriteCloser, c tv.Config) (tv.TV, error)
 		w:      rwc,
 		c:      rwc,
 	}
+	lg.run()
 	return lg, nil
 }
 
@@ -142,6 +144,35 @@ func (lg *lgTV) Do(op *tv.Op) error {
 
 func (tv *lgTV) State() (*tv.State, error) {
 	return nil, errors.New("lg: unsupported")
+}
+
+func (lg *lgTV) run() {
+	go func() {
+		for {
+			resp, err := lg.r.ReadString('x')
+			if err != nil {
+				panic(err)
+			}
+			delim := strings.LastIndex(resp, "\r\n")
+			if delim > -1 {
+				resp = resp[delim+2:]
+			}
+
+			if resp[1] != ' ' {
+				continue
+			}
+
+			var subCommand byte
+			var setId uint8
+			var status string
+			var data []byte
+			n, err := fmt.Sscanf(resp, "%c %2x %2s%xx", &subCommand, &setId, &status, &data)
+			if n < 4 || err != nil {
+				continue
+			}
+
+		}
+	}()
 }
 
 func init() {
