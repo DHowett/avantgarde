@@ -14,6 +14,16 @@ const (
 	OSD
 	Input
 	Tuning
+	Screen
+	Contrast
+	Brightness
+	Color
+	Tint
+	Sharpness
+	Lock
+	AudioBalance
+	ColorTemperature
+	Backlight
 	Raw
 )
 
