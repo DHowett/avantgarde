@@ -13,10 +13,33 @@ import (
 )
 
 type remoteKey uint8
+type cmdDigraph struct {
+	command1, command2 byte
+}
 
 const (
 	RKVolumeUp   remoteKey = 2
 	RKVolumeDown remoteKey = 3
+)
+
+var (
+	cmdSetPower            = cmdDigraph{'k', 'a'}
+	cmdSetVolume           = cmdDigraph{'k', 'f'}
+	cmdRemoteKey           = cmdDigraph{'m', 'c'}
+	cmdSetMute             = cmdDigraph{'k', 'e'}
+	cmdSetOSD              = cmdDigraph{'k', 'l'}
+	cmdSetInput            = cmdDigraph{'x', 'b'}
+	cmdSetTuning           = cmdDigraph{'m', 'a'}
+	cmdSetScreenMute       = cmdDigraph{'k', 'd'}
+	cmdSetContrast         = cmdDigraph{'k', 'g'}
+	cmdSetBrightness       = cmdDigraph{'k', 'h'}
+	cmdSetColor            = cmdDigraph{'k', 'i'}
+	cmdSetTint             = cmdDigraph{'k', 'j'}
+	cmdSetSharpness        = cmdDigraph{'k', 'k'}
+	cmdSetAudioBalance     = cmdDigraph{'k', 't'}
+	cmdSetColorTemperature = cmdDigraph{'k', 'u'}
+	cmdSetBacklight        = cmdDigraph{'m', 'g'}
+	cmdSetLock             = cmdDigraph{'k', 'm'}
 )
 
 type Config struct {
@@ -51,8 +74,8 @@ func (l *lgModel) NewConfig() tv.Config {
 }
 
 type lgCommand struct {
-	class, command byte
-	data           interface{}
+	D    cmdDigraph
+	data interface{}
 }
 
 func (c *lgCommand) Serialize(SetID uint8) []byte {
@@ -69,7 +92,7 @@ func (c *lgCommand) Serialize(SetID uint8) []byte {
 	binary.Write(buf, binary.BigEndian, d)
 
 	b := make([][]byte, 2, buf.Len()+2)
-	b[0] = []byte{c.class, c.command}
+	b[0] = []byte{c.D.command1, c.D.command2}
 	b[1] = []byte(fmt.Sprintf("%2.02x", SetID))
 	for _, v := range buf.Bytes() {
 		b = append(b, []byte(fmt.Sprintf("%2.02x", v)))
@@ -94,11 +117,22 @@ func (lg *lgTV) channelTuningCommand(t tv.Tune) *lgCommand {
 
 	switch cht := t.C.(type) {
 	case tv.AnalogChannel:
-		return &lgCommand{'m', 'a', lgTuningInfo{uint8(cht), 0, 0, 0x01}}
+		return &lgCommand{cmdSetTuning, lgTuningInfo{uint8(cht), 0, 0, 0x01}}
 	case tv.DigitalChannel:
-		return &lgCommand{'m', 'a', lgTuningInfo{0x00, uint16(cht.Ch), uint16(cht.Sub), 0x22}}
+		return &lgCommand{cmdSetTuning, lgTuningInfo{0x00, uint16(cht.Ch), uint16(cht.Sub), 0x22}}
 	default:
 		return nil
+	}
+}
+
+func clamp(val uint8) uint8 {
+	switch {
+	case val < 0:
+		return 0
+	case val > 100:
+		return 100
+	default:
+		return uint8(val)
 	}
 }
 
@@ -106,24 +140,45 @@ func (lg *lgTV) Do(op *tv.Op) error {
 	var cmd *lgCommand
 	switch op.Attribute {
 	case tv.Power:
-		cmd = &lgCommand{'k', 'a', op.Value}
-	case tv.Mute:
-		cmd = &lgCommand{'k', 'e', op.Value}
-	case tv.OSD:
-		cmd = &lgCommand{'k', 'l', op.Value}
+		cmd = &lgCommand{cmdSetPower, op.Value}
 	case tv.Volume:
 		switch op.Operator {
 		case tv.Set:
-			cmd = &lgCommand{'k', 'f', uint8(op.Value.(int))}
+			cmd = &lgCommand{cmdSetVolume, clamp(uint8(op.Value.(int)))}
 		case tv.Increment:
-			cmd = &lgCommand{'m', 'c', RKVolumeUp}
+			cmd = &lgCommand{cmdRemoteKey, RKVolumeUp}
 		case tv.Decrement:
-			cmd = &lgCommand{'m', 'c', RKVolumeDown}
+			cmd = &lgCommand{cmdRemoteKey, RKVolumeDown}
 		}
+	case tv.Mute:
+		cmd = &lgCommand{cmdSetMute, op.Value}
+	case tv.OSD:
+		cmd = &lgCommand{cmdSetOSD, op.Value}
 	case tv.Input:
-		cmd = &lgCommand{'x', 'b', uint8(op.Value.(int))}
+		cmd = &lgCommand{cmdSetInput, uint8(op.Value.(int))}
 	case tv.Tuning:
 		cmd = lg.channelTuningCommand(op.Value.(tv.Tune))
+	case tv.Screen:
+		// Screen mute is the opposite of the "screen" avantgarde.tv value
+		cmd = &lgCommand{cmdSetScreenMute, !(op.Value.(bool))}
+	case tv.Contrast:
+		cmd = &lgCommand{cmdSetContrast, clamp(uint8(op.Value.(int)))}
+	case tv.Brightness:
+		cmd = &lgCommand{cmdSetBrightness, clamp(uint8(op.Value.(int)))}
+	case tv.Color:
+		cmd = &lgCommand{cmdSetColor, clamp(uint8(op.Value.(int)))}
+	case tv.Tint:
+		cmd = &lgCommand{cmdSetTint, clamp(uint8(op.Value.(int)))}
+	case tv.Sharpness:
+		cmd = &lgCommand{cmdSetSharpness, clamp(uint8(op.Value.(int)))}
+	case tv.AudioBalance:
+		cmd = &lgCommand{cmdSetAudioBalance, clamp(uint8(op.Value.(int)))}
+	case tv.ColorTemperature:
+		cmd = &lgCommand{cmdSetColorTemperature, clamp(uint8(op.Value.(int)))}
+	case tv.Backlight:
+		cmd = &lgCommand{cmdSetBacklight, clamp(uint8(op.Value.(int)))}
+	case tv.Lock:
+		cmd = &lgCommand{cmdSetLock, op.Value}
 	case tv.Raw:
 		buf := op.Value.([]byte)
 		if buf[len(buf)-1] != 0x0D {
