@@ -11,12 +11,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/distributed/sers"
 	"github.com/jessevdk/go-flags"
 	"gopkg.in/yaml.v2"
 
 	"github.com/DHowett/avantgarde/tv"
 	_ "github.com/DHowett/avantgarde/tv/lg"
+	_ "github.com/DHowett/avantgarde/tv/sony"
 )
 
 var commandStream *CommandStream
@@ -41,14 +41,40 @@ func ParseChannel(s string) (tv.Channel, error) {
 	return tv.AnalogChannel(uint(ch)), nil
 }
 
-func bindCommand(path string, o *tv.Op) {
-	bindCommandGenerator(path, func(r *http.Request) *tv.Op {
+type tvServer struct {
+	reqTv map[*http.Request]int
+	mux   *http.ServeMux
+}
+
+func newTVServer() *tvServer {
+	return &tvServer{make(map[*http.Request]int), http.NewServeMux()}
+}
+
+func (sv *tvServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	comp := strings.SplitN(r.URL.Path, "/", 4)
+	tvId, err := strconv.Atoi(comp[2])
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if tvId >= len(tvs) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	r.URL.Path = "/" + strings.Join(comp[3:], "/")
+	sv.reqTv[r] = tvId
+	sv.mux.ServeHTTP(w, r)
+	delete(sv.reqTv, r)
+}
+
+func (sv *tvServer) bindCommand(path string, o *tv.Op) {
+	sv.bindCommandGenerator(path, func(r *http.Request) *tv.Op {
 		return o
 	})
 }
 
-func bindCommandGenerator(path string, generator func(*http.Request) *tv.Op) {
-	http.DefaultServeMux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (sv *tvServer) bindCommandGenerator(path string, generator func(*http.Request) *tv.Op) {
+	sv.mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, POST")
 		if r.Method == "OPTIONS" {
@@ -60,15 +86,7 @@ func bindCommandGenerator(path string, generator func(*http.Request) *tv.Op) {
 			return
 		}
 
-		tvId, err := strconv.Atoi(r.FormValue("tv"))
-		if err != nil {
-			tvId = 0
-		}
-
-		if tvId >= len(tvs) {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
+		tvId := sv.reqTv[r]
 
 		cmd := generator(r)
 		if cmd == nil {
@@ -76,7 +94,7 @@ func bindCommandGenerator(path string, generator func(*http.Request) *tv.Op) {
 			return
 		}
 
-		err = tvs[tvId].Do(cmd)
+		err := tvs[tvId].Do(cmd)
 		//err := <-commandStream.Submit(cmd)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -154,17 +172,19 @@ func main() {
 	}
 
 	for _, tvc := range cfg.TVs {
-		serialPort, err := sers.Open(tvc.V.Device)
-		if err != nil {
-			log.Fatalf("failed to open serial device `%v`: %v\n", tvc.V.Device, err.Error())
-		}
+		/*
+			serialPort, err := sers.Open(tvc.V.Device)
+			if err != nil {
+				log.Fatalf("failed to open serial device `%v`: %v\n", tvc.V.Device, err.Error())
+			}
 
-		err = serialPort.SetMode(int(tvc.V.Baud), 8, sers.N, 1, sers.NO_HANDSHAKE)
-		if err != nil {
-			log.Fatalf("failed to configure serial device: %v\n", err.Error())
-		}
+			err = serialPort.SetMode(int(tvc.V.Baud), 8, sers.N, 1, sers.NO_HANDSHAKE)
+			if err != nil {
+				log.Fatalf("failed to configure serial device: %v\n", err.Error())
+			}
 
-		newTv, err := tv.New(tvc.V.Model, serialPort, tvc.ModelSpecific)
+		*/
+		newTv, err := tv.New(tvc.V.Model, nil, tvc.ModelSpecific)
 		if err != nil {
 			log.Fatalf("failed to instantiate TV: %v\n", err.Error())
 		}
@@ -177,11 +197,13 @@ func main() {
 	sigChan := make(chan os.Signal)
 	signal.Notify(sigChan, os.Interrupt, os.Kill)
 
-	bindCommand("/tv/mute", &tv.Op{tv.Mute, tv.Set, true})
-	bindCommand("/tv/unmute", &tv.Op{tv.Mute, tv.Set, false})
-	bindCommandGenerator("/tv/power", boolGenerator("v", tv.Power))
-	bindCommandGenerator("/tv/osd", boolGenerator("v", tv.OSD))
-	bindCommandGenerator("/tv/volume", func(r *http.Request) *tv.Op {
+	sv := newTVServer()
+	sv.bindCommand("/mute", &tv.Op{tv.Mute, tv.Set, true})
+	sv.bindCommand("/unmute", &tv.Op{tv.Mute, tv.Set, false})
+	sv.bindCommandGenerator("/power", boolGenerator("v", tv.Power))
+	sv.bindCommandGenerator("/screen", boolGenerator("v", tv.Screen))
+	sv.bindCommandGenerator("/osd", boolGenerator("v", tv.OSD))
+	sv.bindCommandGenerator("/volume", func(r *http.Request) *tv.Op {
 		dir := r.FormValue("d")
 		formV := r.FormValue("v")
 		if formV == "max" {
@@ -202,8 +224,16 @@ func main() {
 			return &tv.Op{tv.Volume, tv.Set, val}
 		}
 	})
-	bindCommandGenerator("/tv/input", intGenerator("v", tv.Input))
-	bindCommandGenerator("/tv/channel", func(r *http.Request) *tv.Op {
+	sv.bindCommandGenerator("/input", intGenerator("v", tv.Input))
+	sv.bindCommandGenerator("/contrast", intGenerator("v", tv.Contrast))
+	sv.bindCommandGenerator("/brightness", intGenerator("v", tv.Brightness))
+	sv.bindCommandGenerator("/color", intGenerator("v", tv.Color))
+	sv.bindCommandGenerator("/tint", intGenerator("v", tv.Tint))
+	sv.bindCommandGenerator("/sharpness", intGenerator("v", tv.Sharpness))
+	sv.bindCommandGenerator("/balance", intGenerator("v", tv.AudioBalance))
+	sv.bindCommandGenerator("/color_temperature", intGenerator("v", tv.ColorTemperature))
+	sv.bindCommandGenerator("/backlight", intGenerator("v", tv.Backlight))
+	sv.bindCommandGenerator("/channel", func(r *http.Request) *tv.Op {
 		ch, err := ParseChannel(r.FormValue("v"))
 		if err != nil {
 			return nil
@@ -216,7 +246,7 @@ func main() {
 		*/
 		return &tv.Op{tv.Tuning, tv.Set, tv.Tune{0x01, ch}}
 	})
-	bindCommandGenerator("/tv/raw", func(r *http.Request) *tv.Op {
+	sv.bindCommandGenerator("/raw", func(r *http.Request) *tv.Op {
 		cmd := r.FormValue("v")
 		if cmd == "" {
 			return nil
@@ -225,6 +255,8 @@ func main() {
 	})
 
 	//commandStream.Run()
+
+	http.Handle("/tv/", sv)
 
 	go func() {
 		<-sigChan
