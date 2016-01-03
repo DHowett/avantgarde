@@ -24,8 +24,28 @@ const (
 	AudioBalance
 	ColorTemperature
 	Backlight
+	PIP
 	Raw
 )
+
+type Connection uint
+
+const (
+	Coaxial Connection = 1 + iota
+	Component
+	Composite
+	HDMI
+	SCART
+	PC
+
+	// Special signifies a connection type specific to a given TV model.
+	Special
+)
+
+type InputNumber struct {
+	Connection
+	Number int
+}
 
 type Operator uint
 
@@ -33,6 +53,8 @@ const (
 	Set Operator = 1 + iota
 	Increment
 	Decrement
+	Toggle
+	Query
 )
 
 type Antenna uint
@@ -55,7 +77,14 @@ type Op struct {
 	Value     interface{}
 }
 
-type State struct{}
+type State struct {
+	Power   bool
+	Volume  int
+	Mute    bool
+	Screen  bool
+	Channel Channel
+	Input   InputNumber
+}
 
 type Config interface {
 	ModelSpecificRepresentation() interface{}
