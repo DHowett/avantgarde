@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -19,7 +20,33 @@ import (
 	_ "github.com/DHowett/avantgarde/tv/sony"
 )
 
-var commandStream *CommandStream
+var inputNameToTV = map[string]tv.Connection{
+	"coaxial": tv.Coaxial,
+	"rf":      tv.Coaxial,
+	"antenna": tv.Coaxial,
+	"coax":    tv.Coaxial,
+
+	"hdmi": tv.HDMI,
+	"hd":   tv.HDMI,
+
+	"scart": tv.SCART,
+
+	"pc":  tv.PC,
+	"rgb": tv.PC,
+
+	"component": tv.Component,
+	"ycbcr":     tv.Component,
+	"ypbpr":     tv.Component,
+
+	"composite": tv.Composite,
+	"rca":       tv.Composite,
+
+	"special": tv.Special,
+}
+
+var tvInputNames = []string{
+	"coaxial", "component", "composite", "hdmi", "scart", "pc", "special",
+}
 
 func ParseChannel(s string) (tv.Channel, error) {
 	ch, err := strconv.ParseUint(s, 10, 0)
@@ -47,7 +74,33 @@ type tvServer struct {
 }
 
 func newTVServer() *tvServer {
-	return &tvServer{make(map[*http.Request]int), http.NewServeMux()}
+	sv := &tvServer{make(map[*http.Request]int), http.NewServeMux()}
+	sv.mux.Handle("/status", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, GET")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if r.Method != "GET" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		tvId := sv.reqTv[r]
+		state, err := tvs[tvId].State()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		enc := json.NewEncoder(w)
+		err = enc.Encode(state)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+	}))
+	return sv
 }
 
 func (sv *tvServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +277,24 @@ func main() {
 			return &tv.Op{tv.Volume, tv.Set, val}
 		}
 	})
-	sv.bindCommandGenerator("/input", intGenerator("v", tv.Input))
+	sv.bindCommandGenerator("/input", func(r *http.Request) *tv.Op {
+		connectionName := r.FormValue("c")
+		connectionNumberS := r.FormValue("n")
+		if connectionName == "" || connectionNumberS == "" {
+			return nil
+		}
+		connectionNumber, err := strconv.Atoi(connectionNumberS)
+		if err != nil {
+			return nil
+		}
+
+		connection, ok := inputNameToTV[connectionName]
+		if !ok {
+			return nil
+		}
+		return &tv.Op{tv.Input, tv.Set, tv.InputNumber{connection, connectionNumber}}
+
+	})
 	sv.bindCommandGenerator("/contrast", intGenerator("v", tv.Contrast))
 	sv.bindCommandGenerator("/brightness", intGenerator("v", tv.Brightness))
 	sv.bindCommandGenerator("/color", intGenerator("v", tv.Color))
