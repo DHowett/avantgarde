@@ -37,8 +37,8 @@ func (l *braviaModel) NewConfig() tv.Config {
 }
 
 type requestWithResponse struct {
-	request request
-	ch      chan error
+	request
+	ch chan error
 }
 
 type request interface {
@@ -98,7 +98,7 @@ func (c braviaRawCommand) Serialize() []byte {
 	return []byte(c)
 }
 
-var inputTypeMap = map[tv.Connection]int{
+var tvInputToBravia = map[tv.Connection]int{
 	tv.Coaxial:   0,
 	tv.Component: 4,
 	tv.Composite: 3,
@@ -108,7 +108,7 @@ var inputTypeMap = map[tv.Connection]int{
 	tv.Special:   5,
 }
 
-var reverseInputTypeMap = map[int]tv.Connection{
+var braviaInputToTV = map[int]tv.Connection{
 	0: tv.Coaxial,
 	1: tv.HDMI,
 	2: tv.SCART,
@@ -130,7 +130,7 @@ func channelTuningCommand(t tv.Tune) *braviaCommand {
 }
 
 func inputCommand(i tv.InputNumber) *braviaCommand {
-	inputType, ok := inputTypeMap[i.Connection]
+	inputType, ok := tvInputToBravia[i.Connection]
 	if !ok {
 		return nil
 	}
@@ -151,7 +151,7 @@ func clamp(val uint8) uint8 {
 
 type braviaTV struct {
 	config  *Config
-	cmds    chan *requestWithResponse
+	reqCh   chan *requestWithResponse
 	eventCh chan *tv.Op
 	state   tv.State
 	macAddr []byte
@@ -163,7 +163,7 @@ type braviaTV struct {
 func newBraviaTV(config *Config) *braviaTV {
 	bravia := &braviaTV{
 		config:                config,
-		cmds:                  make(chan *requestWithResponse, 1000),
+		reqCh:                 make(chan *requestWithResponse, 1000),
 		eventCh:               make(chan *tv.Op, 1000),
 		commandResponseQueues: make(map[string]*responseQueue),
 		eventHandlers:         make(map[tv.Attribute][]func(*tv.Op)),
@@ -175,7 +175,7 @@ func newBraviaTV(config *Config) *braviaTV {
 
 func (tv *braviaTV) send(s request) chan error {
 	respCh := make(chan error)
-	tv.cmds <- &requestWithResponse{s, respCh}
+	tv.reqCh <- &requestWithResponse{s, respCh}
 	return respCh
 }
 
@@ -304,7 +304,7 @@ func (brv *braviaTV) parseResponse(resp string) *tv.Op {
 		ival, _ := strconv.ParseInt(val[0:7], 10, 0)
 		nval, _ := strconv.ParseInt(val[8:], 10, 0)
 
-		brv.state.Input.Connection = reverseInputTypeMap[int(ival)]
+		brv.state.Input.Connection = braviaInputToTV[int(ival)]
 		brv.state.Input.Number = int(nval)
 
 		op.Attribute = tv.Input
@@ -369,19 +369,19 @@ func (brv *braviaTV) run() {
 		go func() {
 			// command dispatcher
 			for {
-				wrapper, ok := <-brv.cmds
+				wrappedRequest, ok := <-brv.reqCh
 				if !ok {
 					return
 				}
 
-				id := wrapper.request.ID()
-				brv.responseQueueForCommand(id).Push(wrapper.ch)
-				_, err := conn.Write(wrapper.request.Serialize())
+				id := wrappedRequest.ID()
+				brv.responseQueueForCommand(id).Push(wrappedRequest.ch)
+				_, err := conn.Write(wrappedRequest.Serialize())
 				if err != nil {
 					errorCh <- err
 					return
 				}
-				_, _ = <-wrapper.ch // wait for the command to receive any response
+				_, _ = <-wrappedRequest.ch // wait for the command to receive any response
 			}
 		}()
 
