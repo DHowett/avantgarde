@@ -301,7 +301,7 @@ func (brv *braviaTV) parseResponse(resp string) *tv.Op {
 		op.Value = !boolval
 		brv.state.Screen = !boolval
 	case cmdInput:
-		ival, _ := strconv.ParseInt(val[0:7], 10, 0)
+		ival, _ := strconv.ParseInt(val[0:8], 10, 0)
 		nval, _ := strconv.ParseInt(val[8:], 10, 0)
 
 		brv.state.Input.Connection = braviaInputToTV[int(ival)]
