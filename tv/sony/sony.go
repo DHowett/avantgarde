@@ -98,7 +98,7 @@ func (c braviaRawCommand) Serialize() []byte {
 	return []byte(c)
 }
 
-var tvInputToBravia = map[tv.Connection]int{
+var tvInputToBravia = map[tv.Connection]uint{
 	tv.Coaxial:   0,
 	tv.Component: 4,
 	tv.Composite: 3,
@@ -121,9 +121,9 @@ var braviaInputToTV = map[int]tv.Connection{
 func channelTuningCommand(t tv.Tune) *braviaCommand {
 	switch cht := t.C.(type) {
 	case tv.AnalogChannel:
-		return &braviaCommand{cmdChannel, fmt.Sprintf("%08u.0000000", cht)}
+		return &braviaCommand{cmdChannel, fmt.Sprintf("%08d.0000000", cht)}
 	case tv.DigitalChannel:
-		return &braviaCommand{cmdChannel, fmt.Sprintf("%08u.%07u", cht.Ch, cht.Sub)}
+		return &braviaCommand{cmdChannel, fmt.Sprintf("%08d.%07d", cht.Ch, cht.Sub)}
 	default:
 		return nil
 	}
@@ -135,7 +135,7 @@ func inputCommand(i tv.InputNumber) *braviaCommand {
 		return nil
 	}
 
-	return &braviaCommand{cmdInput, fmt.Sprintf("%08u%08u", inputType, i.Number)}
+	return &braviaCommand{cmdInput, fmt.Sprintf("%08d%08d", inputType, i.Number)}
 }
 
 func clamp(val uint8) uint8 {
