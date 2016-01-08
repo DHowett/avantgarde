@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"time"
 
 	"github.com/DHowett/avantgarde/tv"
 )
@@ -151,10 +152,11 @@ func clamp(val uint8) uint8 {
 
 type braviaTV struct {
 	config  *Config
-	reqCh   chan *requestWithResponse
-	eventCh chan *tv.Op
 	state   tv.State
 	macAddr []byte
+
+	reqCh   chan *requestWithResponse
+	eventCh chan *tv.Op
 
 	commandResponseQueues map[string]*responseQueue
 	eventHandlers         map[tv.Attribute][]func(*tv.Op)
@@ -163,10 +165,9 @@ type braviaTV struct {
 func newBraviaTV(config *Config) *braviaTV {
 	bravia := &braviaTV{
 		config:                config,
-		reqCh:                 make(chan *requestWithResponse, 1000),
+		eventHandlers:         make(map[tv.Attribute][]func(*tv.Op)),
 		eventCh:               make(chan *tv.Op, 1000),
 		commandResponseQueues: make(map[string]*responseQueue),
-		eventHandlers:         make(map[tv.Attribute][]func(*tv.Op)),
 	}
 	bravia.init()
 	go bravia.run()
@@ -174,7 +175,8 @@ func newBraviaTV(config *Config) *braviaTV {
 }
 
 func (tv *braviaTV) send(s request) chan error {
-	respCh := make(chan error)
+	respCh := make(chan error, 1)
+	tv.responseQueueForCommand(s.ID()).Push(respCh)
 	tv.reqCh <- &requestWithResponse{s, respCh}
 	return respCh
 }
@@ -184,6 +186,9 @@ func (brv *braviaTV) when(ev tv.Attribute, handler func(*tv.Op)) {
 }
 
 func (bravia *braviaTV) Do(op *tv.Op) error {
+	if bravia.reqCh == nil {
+		return errors.New("tv not connected")
+	}
 	var cmd request
 	switch op.Attribute {
 	case tv.Power:
@@ -342,12 +347,13 @@ func (brv *braviaTV) init() {
 
 func (brv *braviaTV) run() {
 	for {
-		conn, err := net.Dial("tcp", brv.config.Address+":20060")
+		conn, err := net.DialTimeout("tcp", brv.config.Address+":20060", 10*time.Second)
 		if err != nil {
-			panic(err)
+			continue
 		}
 
-		respCh := make(chan string, 1)
+		brv.reqCh = make(chan *requestWithResponse, 1000)
+		closeCh := make(chan struct{})
 		errorCh := make(chan error, 1)
 
 		go func() {
@@ -369,19 +375,22 @@ func (brv *braviaTV) run() {
 		go func() {
 			// command dispatcher
 			for {
-				wrappedRequest, ok := <-brv.reqCh
-				if !ok {
+				select {
+				case _, _ = <-closeCh:
 					return
-				}
+				case wrappedRequest, ok := <-brv.reqCh:
+					if !ok {
+						return
+					}
 
-				id := wrappedRequest.ID()
-				brv.responseQueueForCommand(id).Push(wrappedRequest.ch)
-				_, err := conn.Write(wrappedRequest.Serialize())
-				if err != nil {
-					errorCh <- err
-					return
+					id := wrappedRequest.ID()
+					_, err := conn.Write(wrappedRequest.Serialize())
+					if err != nil {
+						errorCh <- err
+						return
+					}
+					_, _ = <-wrappedRequest.ch // wait for the command to receive any response
 				}
-				_, _ = <-wrappedRequest.ch // wait for the command to receive any response
 			}
 		}()
 
@@ -389,21 +398,38 @@ func (brv *braviaTV) run() {
 		brv.send(&braviaEnquiry{command: cmdMACAddress, data: "eth0"})
 		brv.send(&braviaEnquiry{command: cmdPower})
 
-		for {
-			select {
-			case _ = <-errorCh:
-				conn.Close()
-				close(respCh)
-				break
-			case event := <-brv.eventCh:
-				handlers, ok := brv.eventHandlers[event.Attribute]
-				if ok {
-					for _, handler := range handlers {
-						handler(event)
+		go func() {
+			for {
+				select {
+				case _ = <-errorCh:
+					close(closeCh)
+					return
+				case event := <-brv.eventCh:
+					handlers, ok := brv.eventHandlers[event.Attribute]
+					if ok {
+						for _, handler := range handlers {
+							handler(event)
+						}
 					}
 				}
 			}
+		}()
+
+		_, _ = <-closeCh
+
+		for _, queue := range brv.commandResponseQueues {
+			for { // drain all pending command response queues
+				cmdCh := queue.Pop()
+				if cmdCh == nil {
+					break
+				}
+				cmdCh <- fmt.Errorf("comm error", err)
+				close(cmdCh)
+			}
 		}
+		close(brv.reqCh)
+		brv.reqCh = nil
+		conn.Close()
 	}
 }
 
