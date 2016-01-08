@@ -31,7 +31,7 @@ const (
 type Connection uint
 
 const (
-	Coaxial Connection = 1 + iota
+	Coaxial Connection = 0 + iota
 	Component
 	Composite
 	HDMI
